@@ -19,6 +19,7 @@ import { TOOLS, type ToolDef } from "../tools/registry.js";
 import { listResources, readResource } from "../resources.js";
 import { listPrompts, getPrompt } from "../prompts.js";
 import { log } from "../util/logger.js";
+import { createToolRateLimiter, limitForTool } from "../util/tool-rate-limit.js";
 
 const VERSION = "0.8.2";
 
@@ -30,6 +31,7 @@ export function createServer(ctx: AppContext): {
     { name: "sera-mcp", version: VERSION },
     { capabilities: { tools: {}, resources: {}, prompts: {} } },
   );
+  const rateLimit = createToolRateLimiter(ctx.cfg.toolRateLimits);
 
   // ── tools ───────────────────────────────────────────────────────────────
   // Tool filtering:
@@ -43,7 +45,7 @@ export function createServer(ctx: AppContext): {
     if (t.name === "sera.convert_and_send" && ctx.cfg.signerMode !== "local") {
       continue;
     }
-    registerTool(server, ctx, t);
+    registerTool(server, ctx, t, rateLimit);
     registered++;
   }
 
@@ -91,6 +93,7 @@ function registerTool(
   server: McpServer,
   ctx: AppContext,
   t: ToolDef,
+  rateLimit: ReturnType<typeof createToolRateLimiter>,
 ): void {
   server.registerTool(
     t.name,
@@ -103,6 +106,14 @@ function registerTool(
     },
     async (rawArgs: unknown) => {
       try {
+        const limit = limitForTool(t, ctx.cfg.toolRateLimits);
+        const allowed = rateLimit(t.name, limit);
+        if (!allowed.ok) {
+          throw new Error(
+            `rate limit exceeded for ${t.name}: ${allowed.limit}/${allowed.windowSeconds}s. ` +
+              `Retry after ${allowed.retryAfterSeconds}s.`,
+          );
+        }
         const parsed = t.inputSchema.parse(rawArgs ?? {});
         const t0 = Date.now();
         const result = await t.handler(ctx, parsed);
