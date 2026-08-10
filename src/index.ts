@@ -10,10 +10,12 @@
  * lives in src/tools/registry.ts.
  */
 
+import { pathToFileURL } from "node:url";
 import { loadConfig } from "./config.js";
 import { createServer, SERVER_VERSION } from "./server/create-server.js";
 import { attachStdio } from "./transports/stdio.js";
 import { attachStreamableHttp } from "./transports/http.js";
+import { envNumber } from "./util/env.js";
 import { log } from "./util/logger.js";
 
 type Transport = "stdio" | "http";
@@ -26,11 +28,28 @@ interface CliOpts {
   stateless: boolean;
 }
 
-function parseArgs(argv: string[]): CliOpts {
+function parsePort(value: string | undefined, source: string): number {
+  if (value === undefined || value === "") {
+    throw new Error(`${source} requires a port value`);
+  }
+  const port = Number(value);
+  if (!Number.isFinite(port)) {
+    throw new Error(`${source} must be a finite number, got "${value}"`);
+  }
+  if (!Number.isInteger(port)) {
+    throw new Error(`${source} must be an integer, got ${port}`);
+  }
+  if (port < 1 || port > 65535) {
+    throw new Error(`${source} must be between 1 and 65535, got ${port}`);
+  }
+  return port;
+}
+
+export function parseArgs(argv: string[]): CliOpts {
   const opts: CliOpts = {
     transport: (process.env.SERA_TRANSPORT as Transport) ?? "stdio",
     host: process.env.SERA_HTTP_HOST ?? "127.0.0.1",
-    port: Number(process.env.SERA_HTTP_PORT ?? 3848),
+    port: envNumber("SERA_HTTP_PORT", 3848, { min: 1, max: 65535, integer: true }),
     stateless: (process.env.SERA_HTTP_STATELESS ?? "false").toLowerCase() === "true",
   };
   const allowed = process.env.SERA_HTTP_ALLOWED_HOSTS;
@@ -46,7 +65,7 @@ function parseArgs(argv: string[]): CliOpts {
       }
       opts.transport = v;
     } else if (a === "--host") opts.host = argv[++i] ?? opts.host;
-    else if (a === "--port") opts.port = Number(argv[++i] ?? opts.port);
+    else if (a === "--port") opts.port = parsePort(argv[++i], "--port");
     else if (a === "--stateless") opts.stateless = true;
     else if (a === "--allowed-hosts") {
       const v = argv[++i] ?? "";
@@ -100,7 +119,9 @@ async function main() {
   });
 }
 
-main().catch((err) => {
-  log.error("fatal", { error: err?.stack ?? String(err) });
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err) => {
+    log.error("fatal", { error: err?.stack ?? String(err) });
+    process.exit(1);
+  });
+}
