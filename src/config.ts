@@ -16,6 +16,10 @@ export interface AppConfig {
    * surface. Set via SERA_ENABLE_EXECUTION_TOOLS.
    */
   enableExecutionTools: boolean;
+  toolRateLimits: {
+    defaultPerMinute: number;
+    quotePerMinute: number;
+  };
 }
 
 export interface AppContext {
@@ -110,6 +114,11 @@ export function loadConfig(): AppContext {
     });
   }
 
+  const toolRateLimits = {
+    defaultPerMinute: envNumber("SERA_TOOL_RATE_LIMIT_PER_MINUTE", 0, { min: 0, max: 10_000, integer: true }),
+    quotePerMinute: envNumber("SERA_QUOTE_TOOL_RATE_LIMIT_PER_MINUTE", 0, { min: 0, max: 10_000, integer: true }),
+  };
+
   const sera = new SeraClient({
     baseUrl,
     apiKey: envString("SERA_API_KEY"),
@@ -149,7 +158,7 @@ export function loadConfig(): AppContext {
   const policy = new PolicyEngine(policyCfg, sera);
 
   return {
-    cfg: { network, baseUrl, signerMode, enableExecutionTools },
+    cfg: { network, baseUrl, signerMode, enableExecutionTools, toolRateLimits },
     sera,
     signer,
     policy,

@@ -112,7 +112,7 @@ Opt-in via `--transport http` or `SERA_TRANSPORT=http`. Hardenings shipped:
 
 - **OAuth 2.1 Resource Server + RFC 8707 Resource Indicators.** Without it, any caller who can reach the port can invoke every registered tool. Bind to localhost only, or front with an authenticated reverse proxy (e.g. nginx + JWT validation, Cloudflare Access, your own auth-aware gateway).
 - **Read/exec endpoint split** (`/mcp/read`, `/mcp/exec`) — lands with OAuth so each surface can carry its own scope.
-- **Per-tool rate limiting at the MCP layer.**
+- **OAuth-aware distributed quotas.** Current MCP-layer rate limits are per-process and configurable; public multi-tenant deployments still need identity-aware quotas at the proxy/OAuth layer.
 
 **Safe deployment matrix:**
 
@@ -134,7 +134,7 @@ Explicit list of items that look ready but are not:
 - **Public/multi-tenant Streamable HTTP**: HTTP transport is shipped (v0.8.0) but has no built-in auth. Safe for `127.0.0.1` (default) or behind a trusted auth-handling reverse proxy. Public exposure without one is gated by `SERA_HTTP_ALLOW_UNAUTHENTICATED_PUBLIC` at startup — do not set it in production.
 - **Remote multi-tenant deployment**: no OAuth 2.1 / no per-tenant policy. Single-tenant only until OAuth 2.1 + RFC 8707 Resource Indicators ship.
 - **x402-service live mode** (in `sera-agents`): wired against Coinbase CDP facilitator in `sera-agents` v0.6.0, but operator-gated behind `X402_LIVE_ACK=true` pending Base Sepolia E2E verification. See `sera-agents/SECURITY-MODEL.md`.
-- **Per-tool rate limiting**: not implemented. `limit_watcher` polls unrate-limited at the MCP layer.
+- **Public multi-tenant quotas**: MCP-layer rate limits are per-process. Use proxy/OAuth-layer quotas for per-user enforcement.
 - **Sanctions / address risk screening**: no built-in OFAC check on `recipient`. Use `POLICY_ALLOWED_RECIPIENTS` whitelist.
 
 ## Recommended deployment settings
@@ -182,6 +182,8 @@ SERA_HTTP_PORT=3848
 SERA_HTTP_ALLOWED_HOSTS=mcp.mydomain.com    # host-header allowlist
 SERA_SIGNER_MODE=readonly                    # belt and suspenders
 SERA_ENABLE_EXECUTION_TOOLS=false            # hide execute/convert_and_send entirely
+SERA_TOOL_RATE_LIMIT_PER_MINUTE=120          # per-tool process-local cap
+SERA_QUOTE_TOOL_RATE_LIMIT_PER_MINUTE=30     # stricter cap for quote/polling tools
 ```
 
 Reverse proxy in front handles auth (OAuth, JWT, mTLS — whatever your platform supports). The MCP itself trusts the proxy because the proxy is the trust boundary.
@@ -215,4 +217,4 @@ Tracked publicly so deployers can see what's open. See `git log` for the latest 
 | Prompt template injection | Closed (v0.3.1) |
 | Recipient whitelist bypass when defaulting to owner | Open |
 | External FX MITM via single-source mid trust | Mitigated by 3-source median |
-| `limit_watcher` polling unrate-limited | Open (per-tool quota planned) |
+| `limit_watcher` polling unrate-limited | Mitigated by optional MCP-layer per-tool rate limits |

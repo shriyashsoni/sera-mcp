@@ -161,6 +161,8 @@ Override individual fields by setting the matching env (`POLICY_MAX_NOTIONAL_USD
 |---|---|
 | `POLICY_DRY_RUN=true` | All `execute_swap` calls refuse, regardless of signer mode. Paper-trading mode. |
 | `SERA_ENABLE_EXECUTION_TOOLS=false` | Hide the `execution` tool category (`execute_swap`, `convert_and_send`) from the MCP host entirely. Default `true`. Set `false` for public / multi-tenant deployments. Other tools (discovery, pricing, liquidity, quote planning, treasury, history) keep working. |
+| `SERA_TOOL_RATE_LIMIT_PER_MINUTE=120` | Optional per-process, per-tool MCP rate limit. Default `0` = unlimited. |
+| `SERA_QUOTE_TOOL_RATE_LIMIT_PER_MINUTE=30` | Optional stricter limit for read-only non-idempotent quote tools (`get_quote`, `probe_depth`, `limit_watcher`, etc.). Default `0` = inherit `SERA_TOOL_RATE_LIMIT_PER_MINUTE`. |
 | `SERA_HISTORY_DB=/path/to/file.db` | Enables `fx_history`, `fx_volatility`, `corridor_pnl`. SQLite log of every fx_rate + quote call this MCP serves. |
 | `LOG_LEVEL` | `trace` \| `debug` \| `info` (default) \| `warn` \| `error`. Structured JSON to stderr. |
 | `SERA_API_KEY` + `SERA_API_SECRET` | Required for `get_balances`, `treasury_value`, `exposure_report`, `rebalance_plan`, `pay_invoice`, `settlement_status`. |
@@ -179,6 +181,7 @@ Built for distribution. Every layer assumes the install instructions might be ho
 - **Policy gates**: symbol whitelist, recipient whitelist, per-tx notional cap, rolling 24h volume cap, dry-run kill-switch.
 - **Signer modes**: server defaults to `external` and holds no key.
 - **Caching**: read-only endpoints have TTL caches with in-flight de-dupe. Quotes never cached.
+- **MCP-layer rate limits**: optional fixed-window per-tool limits can cap polling loops and quote-heavy tools before they hit Sera.
 - **Logging**: structured JSON to stderr; never to stdout (which is reserved for MCP transport).
 
 Run `sera.doctor` in any agent session for a live posture check.
@@ -268,6 +271,7 @@ Honest read of what's hardened vs what's still moving:
 | Tool grouping + execution opt-in (`SERA_ENABLE_EXECUTION_TOOLS`) | **Stable** (v0.5.0) | Default `true`; set `false` to hide `execute_swap` + `convert_and_send` entirely. |
 | `convert_and_send` only registered when `SERA_SIGNER_MODE=local` | **Stable** (v0.5.0) | Tool no longer surfaces when it can't work. |
 | Streamable HTTP transport | **Stable** (v0.8.0) | Additive to stdio; `--transport http` opts in. Localhost-default with DNS-rebinding protection. No OAuth (bind to localhost or front with auth proxy). |
+| MCP-layer per-tool rate limits | **Stable** | Optional via `SERA_TOOL_RATE_LIMIT_PER_MINUTE` and `SERA_QUOTE_TOOL_RATE_LIMIT_PER_MINUTE`; default unlimited for local compatibility. |
 | Per-tool `outputSchema` + `structuredContent` | **Partial** (v0.7.0) | Live on `doctor`, `list_currencies`, `get_fx_rate`, `market_health`. Remaining tools incremental. |
 | Read/exec endpoint split (`/mcp/read`, `/mcp/exec`) | **Planned** | When OAuth lands. |
 | OAuth 2.1 + RFC 8707 Resource Indicators for remote HTTP | **Planned** | Required before any public/multi-tenant deployment. |
@@ -280,7 +284,6 @@ Honest read of what's hardened vs what's still moving:
 - **Multi-hop SOR explorer** — for pairs with no direct corridor, plan via intermediate fiats.
 - **Address risk screening** — sanctions / OFAC hooks (needs an external provider).
 - **Approval/allowance manager** — `sera.approval_status` for ERC-20 approvals to the Sera vault.
-- **Per-tool rate limits** — defend against polling-loop DoS on the upstream quote engine.
 
 ## CLI
 
